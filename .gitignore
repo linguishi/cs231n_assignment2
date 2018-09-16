@@ -1,0 +1,8 @@
+*.swp
+*.pyc
+*.so
+.env/*
+.vscode/
+cs231n/datasets/
+cs231n/build/
+.ipynb_checkpoints/
