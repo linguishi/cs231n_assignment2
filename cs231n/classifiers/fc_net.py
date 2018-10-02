@@ -177,12 +177,18 @@ class FullyConnectedNet(object):
       if i == 0:
         self.params['W1'] = weight_scale * np.random.randn(input_dim, hidden_dims[0])
         self.params['b1'] = np.zeros(hidden_dims[0])
+        if self.use_batchnorm:
+          self.params['gamma1'] = np.ones(hidden_dims[0])
+          self.params['beta1'] = np.zeros(hidden_dims[0])
       elif i == self.num_layers - 1:
         self.params['W' + str(i+1)] = weight_scale * np.random.randn(hidden_dims[-1], num_classes)
         self.params['b'+ str(i+1)] = np.zeros(num_classes)
       else:
         self.params['W' + str(i+1)] = weight_scale * np.random.randn(hidden_dims[i-1], hidden_dims[i])
         self.params['b'+ str(i+1)] = np.zeros(hidden_dims[i])
+        if self.use_batchnorm:
+          self.params['gamma' + str(i+1)] = np.ones(hidden_dims[i])
+          self.params['beta' + str(i+1)] = np.zeros(hidden_dims[i])
     ############################################################################
     #                             END OF YOUR CODE                             #
     ############################################################################
@@ -240,12 +246,33 @@ class FullyConnectedNet(object):
     # self.bn_params[1] to the forward pass for the second batch normalization #
     # layer, etc.                                                              #
     ############################################################################
-    layer_score, cache = affine_relu_forward(X, self.params['W1'], self.params['b1'])
+    def aff_bn_relu_forward(x, w, b, gamma, beta, bn_param):
+      aout, fc_cache = affine_forward(x, w, b)
+      bout, bn_cache = batchnorm_forward(aout, gamma, beta, bn_param)
+      rout, relu_cache = relu_forward(bout)
+      cache = (fc_cache, bn_cache, relu_cache)
+      return rout, cache
+    if self.use_batchnorm:
+      layer_score, cache = aff_bn_relu_forward(X, self.params['W1'], 
+          self.params['b1'], self.params['gamma1'], self.params['beta1'], 
+          self.bn_params[0])
+    else:
+      layer_score, cache = affine_relu_forward(X, self.params['W1'], 
+          self.params['b1'])
     caches = [cache]
     for i in range(2, self.num_layers):
-      layer_score, cache = affine_relu_forward(layer_score, self.params['W'+str(i)], self.params['b'+str(i)])
+      if self.use_batchnorm:
+        layer_score, cache = aff_bn_relu_forward(layer_score, 
+            self.params['W'+str(i)], self.params['b'+str(i)], 
+            self.params['gamma'+str(i)], self.params['beta'+str(i)], 
+            self.bn_params[i-1])
+      else:
+        layer_score, cache = affine_relu_forward(layer_score, 
+          self.params['W'+str(i)], self.params['b'+str(i)])
       caches.append(cache)
-    scores, cache = affine_forward(layer_score, self.params['W' + str(self.num_layers)], self.params['b' + str(self.num_layers)])
+    scores, cache = affine_forward(layer_score, 
+        self.params['W' + str(self.num_layers)], 
+        self.params['b' + str(self.num_layers)])
     caches.append(cache)
     ############################################################################
     #                             END OF YOUR CODE                             #
@@ -269,6 +296,12 @@ class FullyConnectedNet(object):
     # automated tests, make sure that your L2 regularization includes a factor #
     # of 0.5 to simplify the expression for the gradient.                      #
     ############################################################################
+    def aff_bn_relu_backward(dout, cache):
+      fc_cache, bn_cache, relu_cache = cache
+      dbnout = relu_backward(dout, relu_cache)
+      daout, dgamma, dbeta = batchnorm_backward_alt(dbnout, bn_cache)
+      dx, dw, db = affine_backward(daout, fc_cache)
+      return dx, dw, db, dgamma, dbeta
     loss, dscore = softmax_loss(scores, y) 
     for i in range(1, self.num_layers + 1):
       loss += 0.5 * self.reg * np.sum(self.params['W' + str(i)] * self.params['W' + str(i)])
@@ -276,7 +309,10 @@ class FullyConnectedNet(object):
     grads['W' + str(self.num_layers)] += self.reg * self.params['W' + str(self.num_layers)]
     for i in range(self.num_layers-1, 0, -1):
       cache = caches.pop()
-      dscore, grads['W' + str(i)], grads['b' + str(i)] = affine_relu_backward(dscore, cache)
+      if self.use_batchnorm:
+        dscore, grads['W' + str(i)], grads['b' + str(i)], grads['gamma' + str(i)], grads['beta' + str(i)] = aff_bn_relu_backward(dscore, cache)
+      else:
+        dscore, grads['W' + str(i)], grads['b' + str(i)] = affine_relu_backward(dscore, cache)
       grads['W' + str(i)] += self.reg * self.params['W' + str(i)]
     ############################################################################
     #                             END OF YOUR CODE                             #
