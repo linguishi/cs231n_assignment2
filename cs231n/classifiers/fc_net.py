@@ -252,20 +252,35 @@ class FullyConnectedNet(object):
       rout, relu_cache = relu_forward(bout)
       cache = (fc_cache, bn_cache, relu_cache)
       return rout, cache
+    def aff_bn_relu_do_forward(x, w, b, gamma, beta, bn_param, do_param):
+      rout, cache = aff_bn_relu_forward(x, w, b, gamma, beta, bn_param)
+      doout, do_cache = dropout_forward(rout, do_param)
+      return doout, (cache[0], cache[1], cache[3], do_cache)
     if self.use_batchnorm:
-      layer_score, cache = aff_bn_relu_forward(X, self.params['W1'], 
-          self.params['b1'], self.params['gamma1'], self.params['beta1'], 
-          self.bn_params[0])
+      if self.use_dropout:
+        layer_score, cache = aff_bn_relu_do_forward(X, self.params['W1'], 
+            self.params['b1'], self.params['gamma1'], self.params['beta1'], 
+            self.bn_params[0], self.dropout_param)
+      else:
+        layer_score, cache = aff_bn_relu_forward(X, self.params['W1'], 
+            self.params['b1'], self.params['gamma1'], self.params['beta1'], 
+            self.bn_params[0])
     else:
       layer_score, cache = affine_relu_forward(X, self.params['W1'], 
           self.params['b1'])
     caches = [cache]
     for i in range(2, self.num_layers):
       if self.use_batchnorm:
-        layer_score, cache = aff_bn_relu_forward(layer_score, 
-            self.params['W'+str(i)], self.params['b'+str(i)], 
-            self.params['gamma'+str(i)], self.params['beta'+str(i)], 
-            self.bn_params[i-1])
+        if self.use_dropout:
+          layer_score, cache = aff_bn_relu_do_forward(layer_score, 
+              self.params['W'+str(i)], self.params['b'+str(i)], 
+              self.params['gamma'+str(i)], self.params['beta'+str(i)], 
+              self.bn_params[i-1], self.dropout_param)
+        else:  
+          layer_score, cache = aff_bn_relu_forward(layer_score, 
+              self.params['W'+str(i)], self.params['b'+str(i)], 
+              self.params['gamma'+str(i)], self.params['beta'+str(i)], 
+              self.bn_params[i-1])
       else:
         layer_score, cache = affine_relu_forward(layer_score, 
           self.params['W'+str(i)], self.params['b'+str(i)])
@@ -302,6 +317,10 @@ class FullyConnectedNet(object):
       daout, dgamma, dbeta = batchnorm_backward_alt(dbnout, bn_cache)
       dx, dw, db = affine_backward(daout, fc_cache)
       return dx, dw, db, dgamma, dbeta
+    def aff_bn_relu_do_backward(dout, cache):
+      fc_cache, bn_cache, relu_cache, do_cache = cache
+      dreout = dropout_backward(dout, do_cache)
+      return aff_bn_relu_backward(dreout, (fc_cache, bn_cache, relu_cache))
     loss, dscore = softmax_loss(scores, y) 
     for i in range(1, self.num_layers + 1):
       loss += 0.5 * self.reg * np.sum(self.params['W' + str(i)] * self.params['W' + str(i)])
@@ -310,7 +329,10 @@ class FullyConnectedNet(object):
     for i in range(self.num_layers-1, 0, -1):
       cache = caches.pop()
       if self.use_batchnorm:
-        dscore, grads['W' + str(i)], grads['b' + str(i)], grads['gamma' + str(i)], grads['beta' + str(i)] = aff_bn_relu_backward(dscore, cache)
+        if self.use_dropout:
+          dscore, grads['W' + str(i)], grads['b' + str(i)], grads['gamma' + str(i)], grads['beta' + str(i)] = aff_bn_relu_do_backward(dscore, cache)
+        else:
+          dscore, grads['W' + str(i)], grads['b' + str(i)], grads['gamma' + str(i)], grads['beta' + str(i)] = aff_bn_relu_backward(dscore, cache)
       else:
         dscore, grads['W' + str(i)], grads['b' + str(i)] = affine_relu_backward(dscore, cache)
       grads['W' + str(i)] += self.reg * self.params['W' + str(i)]
